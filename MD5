@@ -1,0 +1,9 @@
+cc472aead35e045e09a88e73a1b365fc *DESCRIPTION
+df390c53434517b304ac5db487184641 *NAMESPACE
+b72ebf287938b2ee96afdb597d8b6b6e *R/mmcx.R
+6c0e43d521c90320a064080198acef70 *R/multi.mtd.R
+3b5bd02e58fe5eb7a08ef382605c5a4e *R/multi.mtd_probit.R
+9d905d6d78a3dddc72ceceb8a470fa8b *build/partial.rdb
+db1a5880112f9687ddfdd91459c4c2c3 *man/mmcx.Rd
+d5c4c14b5b6c9cd0103cb0cd44c2c941 *man/multi.mtd.Rd
+194aa642a976bb0d406e8cad3f690c62 *man/multi.mtd_probit.Rd
