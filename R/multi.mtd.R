@@ -1,186 +1,64 @@
-
-
-#MMC MTD estimation
+#' @title Estimation of Multivariate Markov Chains - MTD model
+#'
+#' @description
+#' This function estimates the Mixture Distribution Model (Raftery (1985)) for Multivariate Markov Chains.
+#' It considers Berchtold (2001) optimization algorithm for the parameters and estimates the probabilities transition matrices as proposed in Ching (2002).
+#'
+#'
+#' @param y matrix of categorical data sequences
+#' @param deltaStop value below which the optimization phases of the parameters stop
+#' @param is_constrained flag indicating whether the function will consider the usual set of constraints (usual set: \emph{TRUE}, new set of constraints: \emph{FALSE}).
+#' @param delta the amount of change to increase/decrease in the parameters for each iteration of the optimization algorithm.
+#'
+#' @return The function returns a list with the parameter estimates, standard-errors, z-statistics, p-values and the value of the log-likelihood function, for each equation.
+#' @export
+#'
+#' @note
+#' See details of the optimization procedure in \href{https://onlinelibrary.wiley.com/doi/abs/10.1111/1467-9892.00231}{Berchtold (2001)}.
+#'
+#' @references
+#'
+#' Raftery, A. E. (1985). A Model for High-Order Markov Chains. Journal of the Royal Statistical Society. Series B (Methodological), 47(3), 528-539. \url{http://www.jstor.org/stable/2345788}
+#'
+#' Berchtold, A. (2001). Estimation in the Mixture Transition Distribution Model. Journal of Time Series Analysis, 22(4), 379-397.\doi{10.1111/1467-9892.00231}
+#'
+#' Ching, W. K., E. S. Fung, and M. K. Ng (2002). A multivariate Markov chain model for categorical data sequences and its applications in demand predictions. IMA Journal of Management Mathematics, 13(3), 187-199. \doi{10.1093/imaman/13.3.187}
+#'
+#' @examples
+#' data(stockreturns)
+#' s <- cbind(stockreturns$sp500, stockreturns$djia)
+#' multi.mtd(s)
 multi.mtd <-
   function(y,
            deltaStop = 0.0001,
            is_constrained = TRUE,
            delta = 0.1) {
+    # Check arguments
+    check_arg(y, is_constrained)
+
     results <- list(NA)
 
-    #Calculate Frequency Transition Matrices (Ching (2002))
-    ProbMatrixF <- function(s) {
-      n = nrow(s)
-      m1 = max(s)
-      m0 = min(s)
-      f = array(1, dim = c(m1, m1, (ncol(s) * ncol(s))))
-      d = 0
+    # Log-likelihood (Berchtold (2001))
+    LogLikelihood <- function(lambda, ni, qi) {
+      ll <- sum(t(ni) %*% log(qi %*% lambda))
 
-      for (i in 1:ncol(s)) {
-        for (j in 1:ncol(s)) {
-          d = d + 1
-          for (k1 in m0:m1) {
-            for (k2 in m0:m1) {
-              c = 0
-              for (t in 2:n) {
-                if (s[t - 1, j] == k1 && s[t, i] == k2) {
-                  c = c + 1 #count number of sequences of type k1 -> k2
-                }
-              }
-              f[k2, k1, d] = c
-            }
-          }
-        }
-      }
-      return(f)
+      return(ll)
     }
 
-    #Calculate Probability Transition Matrices (Ching (2002))
-    ProbMatrixQ <- function(f, s) {
-      n = nrow(s)
-      m1 = max(s)
-      m0 = min(s)
-      q = array(0, dim = c(m1, m1, (ncol(s) * ncol(s))))
-      d = 0
-
-      for (i in 1:ncol(s)) {
-        for (j in 1:ncol(s)) {
-          d = d + 1
-          for (k1 in m0:m1) {
-            for (k2 in m0:m1) {
-              if (sum(f[, k1, d]) > 0) {
-                q[k2, k1, d] = f[k2, k1, d] / sum(f[, k1, d]) #Normalize frequency transition matrices
-              }
-            }
-          }
-        }
-      }
-
-      return(q)
-    }
-
-    #Array of number of sequences: n_i0_il
-    NumberOfSequences <- function(f, s) {
-      m1 <- max(s)
-
-      n = m1 * m1
-
-      n_i0_il <- array(0, dim = c(n, (ncol(s) * ncol(s))))
-
-      for (g in 1:(ncol(s) * ncol(s))) {
-        n_i0_il[, g] = matrixcalc::vec(f[, , g]) #Vectorization of frequency transition matrices
-      }
-      return(n_i0_il)
-    }
-    #Array of the probabilities values: q_i0_il
-    ArrayQ <- function(q, s){
-      m1 <- max(s)
-      n = m1 * m1
-      q_i0_il <- array(0, dim = c(n, (ncol(s) * ncol(s))))
-
-      for (g in 1:(ncol(s) * ncol(s))) {
-        q_i0_il[, g] = matrixcalc::vec(q[, , g]) #Vectorization of probability transition matrices
-      }
-      return(q_i0_il)
-    }
-
-    #Initial Values p. 387 de Berchtold (2001) - (This function is adapted from march::march.mtd.construct())
-    CalculateInitialValues <- function(f, s) {
-      #Calculate initial values for all equations
-      n = nrow(s)
-      m1 = max(s)
-      u <- array(data = 0, dim = c(1, (ncol(s) * ncol(s))))
-      sumu <- array(data = 0, dim = c(1, ncol(s)))
-      lambda <- u
-
-      for (g in 1:(ncol(s) * (ncol(s)))) {
-        cg <- f[, , g]
-        tc <- sum(cg)
-        sr <- rowSums(cg)
-        sc <- colSums(cg)
-
-        num <- 0
-        for (i in 1:m1) {
-          for (j in 1:m1) {
-            if (cg[i, j] != 0) {
-              num <-
-                num + cg[i, j] * (log2(sc[i]) + log2(sr[j]) - log2(cg[i, j]) - log2(tc))
-            }
-          }
-        }
-
-        den <- 0
-        for (j in 1:m1) {
-          if (sc[j] != 0 & tc != 0) {
-            den <- den + sc[j] * (log2(sc[j]) - log2(tc))
-          }
-        }
-
-        if (den != 0) {
-          u[g] = num / den
-        } else{
-          u[g] = 0
-        }
-      }
-
-      j <- 0
-      for (i in 1:ncol(s)) {
-        sumu[i] <- sum(u[(i + j):(ncol(s) * i)])
-        j = j + ncol(s) - 1
-      }
-
-      sumu <- rep(sumu, each = ncol(s))
-
-      for (j in 1:(ncol(s) * ncol(s))) {
-        lambda[j] <- u[j] / sumu[j]
-      }
-      return(lambda = lambda)
-    }
-
-    #Calculate first partial derivatives for numerical maximization - (This function is adapted from march::march.mtd.construct())
-    PartialDerivatives <- function(n_i0_il, q_i0_il, lambda) {
-      l <- length(lambda)
-      pd_lambda <- rep(0, l)
-
-      for (j in 1:l) {
-        for (k in 1:length(n_i0_il[, j])) {
-          if ((q_i0_il[k, ] %*% lambda) != 0) {
-            pd_lambda[j] <-
-              pd_lambda[j] + n_i0_il[k, j] * (q_i0_il[k, j] / (q_i0_il[k, ] %*% lambda))
-          }
-        }
-      }
-      return(pd_lambda)
-    }
-
-    #Log-likelihood (Berchtold (2001))
-    LogLikelihood <- function(lambda, n_i0_il, q_i0_il) {
-      ll <- 0
-
-      for (j in 1:ncol(q_i0_il)) {
-        for (i in 1:length(n_i0_il[, j])) {
-          if (q_i0_il[i, ] %*% lambda > 0) {
-            ll <- ll + n_i0_il[i, j] * log(q_i0_il[i, ] %*% lambda)
-          }
-        }
-      }
-      ll
-    }
-
-    #Numerical maximization: Algorithm from Berchtold (2001) - (This function is adapted from march::march.mtd.construct())
+    # Numerical maximization: Algorithm from Berchtold (2001) - (This function is adapted from march::march.mtd.construct())
     OptimizeLambda <-
       function(lambda,
                delta,
-               n_i0_il,
-               q_i0_il,
+               ni,
+               qi,
                is_constrained,
                delta_stop) {
         delta_it <- delta
 
         ll <- 0
-        ll <- LogLikelihood(lambda, n_i0_il, q_i0_il)
+        ll <- LogLikelihood(lambda = lambda, ni = ni, qi = qi)
         pd_lambda <- 0
-        pd_lambda <- PartialDerivatives(n_i0_il, q_i0_il, lambda)
+        pd_lambda <- PartialDerivatives(ni = ni, qi = qi, lambda = lambda)
 
         i_inc <- which.max(pd_lambda)
         i_dec <- which.min(pd_lambda)
@@ -210,7 +88,7 @@ multi.mtd <-
           }
         }
 
-        #Otimization loop
+        # Otimization loop
         while (TRUE) {
           if (is_constrained) {
             delta_it <- min(c(delta_it, 1 - par_inc, par_dec))
@@ -219,7 +97,7 @@ multi.mtd <-
           new_lambda <- lambda_r
           new_lambda[i_inc] <- par_inc + delta_it
           new_lambda[i_dec] <- par_dec - delta_it
-          new_ll <- LogLikelihood(new_lambda, n_i0_il, q_i0_il)
+          new_ll <- LogLikelihood(new_lambda, ni, qi)
           if (new_ll > ll) {
             return(list(
               lambda = new_lambda,
@@ -238,105 +116,32 @@ multi.mtd <-
             delta_it <- delta_it / 2
           }
         }
-
       }
 
-    #Second partial derivatives computation to perform inference on the parameters
-    Inference <- function(n_i0_il, q_i0_il, lambda) {
-      l <- length(lambda)
-      pd <- rep(0, l)
-      hess <- matrix(0, l, l)
-      var <- rep(0, l)
-      se <- rep(0, l)
-      zstat <- rep(0, l)
-      pvalue <- rep(0, l)
-      n <- length(n_i0_il)
-
-
-      for (i in 1:l) {
-        pd <- rep(0, l)
-        for (j in 1:l) {
-          for (k in 1:length(n_i0_il[, j])) {
-            if ((q_i0_il[k, ] %*% lambda) != 0) {
-              pd[j] <-
-                pd[j] + n_i0_il[k, j] * (-(q_i0_il[k, i] * q_i0_il[k, j]) / (q_i0_il[k, ] %*% lambda) ^
-                                           2)
-            }
-          }
-          hess[i, j] <- pd[j]
-        }
-      }
-
-
-      hessinv <- solve(-hess)
-
-      var <- diag(hessinv)
-
-      for (j in 1:l) {
-        se[j] <- sqrt(var[j])
-        zstat[j] <- lambda[j] / se[j]
-        pvalue[j] <- 2 * (1 - stats::pnorm(abs(zstat[j])))
-      }
-
-      return(l = list(
-        se = se,
-        zstat = zstat,
-        pvalue = pvalue
-      ))
-    }
-
-    #Output table
-    output.table <- function(estimates, se, zstat, pvalue) {
-      stars <- rep("", length(pvalue))
-
-      if (!is.character(se))
-      {
-        stars[pvalue <= 0.01] <- "***"
-        stars[pvalue > 0.01 & pvalue <= 0.05] <- "**"
-        stars[pvalue > 0.05 & pvalue <= 0.1] <- "*"
-
-        se <- formatC(se, digits = 6, format = "f")
-        zstat <- formatC(zstat, digits = 3, format = "f")
-        pvalue <- formatC(pvalue, digits = 3, format = "f")
-        stars <- format(stars, justify = "left")
-      }
-      else
-      {
-        se <- rep(".", length(pvalue))
-        zstat <- rep(".", length(pvalue))
-        pvalue <- rep(".", length(pvalue))
-      }
-
-      estimates <- formatC(estimates, digits = 6, format = "f")
-      results <-
-        data.frame(cbind(estimates, se, zstat, pvalue, stars), row.names = NULL)
-
-      namcol <- c("Estimate", "Std. Error", "t value", "Pr(>|t|)", "")
-      colnames(results) <- namcol
-
-      return(results)
-
-    }
 
     nr.eq <- ncol(y)
-    m1 <- max(y)
+
+    # Define indices to select appropriate values, for each equation
+    index_vector <- 1:(ncol(y) * ncol(y))
+
+    split_result <- lapply(
+      split(1:length(index_vector), rep(1:ncol(y), each = ncol(y))),
+      function(indices) index_vector[indices]
+    )
 
     f <- ProbMatrixF(y)
-    q <- ProbMatrixQ(f, y)
+    q <- ProbMatrixQ(y)
 
-    n_i0_il <- NumberOfSequences(f, y)
-    q_i0_il <- ArrayQ(q, y)
+    ni <- apply(f, 3, function(x) matrixcalc::vec(x))
+    qi <- apply(q, 3, function(x) matrixcalc::vec(x))
 
-    lambda <- CalculateInitialValues(f, y)
+    lambda <- CalculateInitialValues(f, split_result = split_result)
 
-    j = 0
-    k <- 0
-    for (i in 1:nr.eq) {
-      ll <- 0
-
-      n <- n_i0_il[, (i + j):(nr.eq * i)]
-      q <- q_i0_il[, (i + j):(nr.eq * i)]
-      l <- lambda[(i + j):(nr.eq * i)]
+    j <- 1
+    for (i in split_result) {
+      n <- ni[, i]
+      q <- qi[, i]
+      l <- lambda[i]
 
       opt <- OptimizeLambda(l, delta, n, q, is_constrained, deltaStop)
 
@@ -345,16 +150,17 @@ multi.mtd <-
 
       inf <- Inference(n, q, lambdaOptim)
 
-      results[[i + k]] <-
-        output.table(lambdaOptim, inf$se, inf$zstat, inf$pvalue)
-      results[[(i + k + 1)]] <- ll
-      names(results)[[i + k]] <- paste("Equation", i, sep = " ")
-      names(results)[[(i + k + 1)]] <- paste("LogLik", i, sep = " ")
+      output.table(lambdaOptim, inf$se, inf$zstat, inf$pvalue, ll, j, flag = inf$flag)
 
-      j = j + nr.eq - 1
-      k = k + 1
+      table <- data.frame(cbind(lambdaOptim, inf$se, inf$zstat, inf$pvalue), row.names = NULL)
+      colnames(table) <- c("Estimates", "Std. Error", "z value", "p-value")
+
+      results[[j]] <- list(table, ll)
+      names(results[[j]]) <- c("Estimation", "Log-likelihood")
+
+      j <- j + 1
     }
-
-    return(results)
-
+    names(results) <- paste("Equation", 1:ncol(y), sep = " ")
+    results <- unlist(results, recursive = FALSE)
+    invisible(results)
   }

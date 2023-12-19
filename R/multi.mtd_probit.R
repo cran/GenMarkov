@@ -1,150 +1,77 @@
-
-#MMC estimation with Nicolau (2014) specification through maxLik()
+#' @title Estimation of Multivariate Markov Chains: MTD - Probit Model
+#'
+#' @description Estimation of Multivariate Markov Chains through the proposed model by Nicolau (2014).
+#' This model presents two attractive features: it is completely free of constraints, thereby facilitating the estimation procedure,
+#' and it is more precise at estimating the transition probabilities of a multivariate or higher-order Markov chain than the Raftery's MTD model.
+#'
+#' @param y matrix of categorical data sequences
+#' @param initial numerical vector of initial values
+#' @param nummethod Numerical maximisation method, currently either "NR" (for Newton-Raphson), "BFGS" (for Broyden-Fletcher-Goldfarb-Shanno), "BFGSR" (for the BFGS algorithm implemented in R), "BHHH" (for Berndt-Hall-Hall-Hausman), "SANN" (for Simulated ANNealing), "CG" (for Conjugate Gradients), or "NM" (for Nelder-Mead). Lower-case letters (such as "nr" for Newton-Raphson) are allowed. The default method is "BFGS". For more details see \code{\link[maxLik:maxLik]{maxLik()}}.
+#'
+#' @return The function returns a list with the parameter estimates, standard-errors, z-statistics, p-values and the value of the log-likelihood function, for each equation.
+#' @export
+#'
+#' @author Carolina Vasconcelos and Bruno Damásio
+#'
+#' @examples
+#' data(stockreturns)
+#' s <- cbind(stockreturns$sp500, stockreturns$djia)
+#' multi.mtd_probit(s, initial = c(1, 1, 1), nummethod = "bfgs")
+#'
+#' @references
+#' Nicolau, J. (2014). A new model for multivariate markov chains. Scandinavian Journal of Statistics, 41(4), 1124-1135.\doi{10.1111/sjos.12087}
 multi.mtd_probit <- function(y, initial, nummethod = "bfgs") {
-  results <- list(NA)
+  # Check arguments
+  check_arg_probit(y, initial, nummethod)
 
-
-  #Calculate Frequency Transition Matrices (Ching (2002))
-  ProbMatrixF <- function(s) {
-    n = nrow(s)
-    m1 = max(s)
-    m0 = min(s)
-    f = array(1, dim = c(m1, m1, (ncol(s) * ncol(s))))
-    d = 0
-
-    for (i in 1:ncol(s)) {
-      for (j in 1:ncol(s)) {
-        d = d + 1
-        for (k1 in m0:m1) {
-          for (k2 in m0:m1) {
-            c = 0
-            for (t in 2:n) {
-              if (s[t - 1, j] == k1 && s[t, i] == k2) {
-                c = c + 1
-              }
-            }
-            f[k2, k1, d] = c
-          }
-        }
-      }
-    }
-    return(f)
-  }
-
-  #Calculate Probability Transition Matrices (Ching (2002))
-  ProbMatrixQ <- function(f, s) {
-    n = nrow(s)
-    m1 = max(s)
-    m0 = min(s)
-    q = array(0, dim = c(m1, m1, (ncol(s) * ncol(s))))
-    d = 0
-
-    for (i in 1:ncol(s)) {
-      for (j in 1:ncol(s)) {
-        d = d + 1
-        for (k1 in m0:m1) {
-          for (k2 in m0:m1) {
-            if (sum(f[, k1, d]) > 0) {
-              q[k2, k1, d] = f[k2, k1, d] / sum(f[, k1, d])
-            }
-          }
-        }
-      }
-    }
-
-    return(q)
-  }
-
-  #Array of number of sequences: n_i0_il
-  NumberOfSequences <- function(f, s) {
-    m1 <- max(s)
-
-    n = m1 * m1
-
-    n_i0_il <- array(0, dim = c(n, (ncol(s) * ncol(s))))
-
-    for (g in 1:(ncol(s) * ncol(s))) {
-      n_i0_il[, g] = matrixcalc::vec(f[, , g]) #Vectorization of frequency transition matrices
-    }
-    return(n_i0_il)
-  }
-
-  #Array of the probabilities values: q_i0_il
-  ArrayQ <- function(q, s) {
-    m1 <- max(s)
-    n = m1 * m1
-    q_i0_il <- array(0, dim = c(n, (ncol(s) * ncol(s))))
-
-    for (g in 1:(ncol(s) * ncol(s))) {
-      q_i0_il[, g] = matrixcalc::vec(q[, , g]) #Vectorization of probability transition matrices
-    }
-    return(q_i0_il)
-  }
-
-
+  # Define number of equations to estimate
   nr.eq <- ncol(y)
-  m1 <- max(y)
-  ini <- initial
 
-  f <- ProbMatrixF(y)
-  q <- ProbMatrixQ(f, y)
+  # Calculate frequency transition matrices and vectorize
+  ni <- apply(ProbMatrixF(y), 3, function(x) matrixcalc::vec(x))
 
-  ni <- NumberOfSequences(f, y)
-  qi <- ArrayQ(q, y)
+  # Calculate probability transition matrices and vectorize
+  qi <- apply(ProbMatrixQ(y), 3, function(x) matrixcalc::vec(x))
 
-  j = 0
-  k = 0
-  for (i in 1:nr.eq) {
-    ll <- 0
+  # Define indices to select appropriate columns of ni and qi, for each equation
+  index_vector <- 1:ncol(ni)
 
-    neq <- ni[, (i + j):(nr.eq * i)]
-    qeq <- qi[, (i + j):(nr.eq * i)]
-
-    #Define Log-likelihood as in Nicolau (2014)
-    LogLikelihood_p <-
-      function(eta,
-               n_i0_il = ni,
-               q_i0_il = qi,
-               n = neq,
-               qn = qeq) {
-        nr.eq <- length(eta) - 1
-        p <- array(1, dim = c(1, nr.eq))
-
-        k = 0
-        for (i in 1:nr.eq) {
-          p[i] <-
-            stats::pnorm(sum(cbind(rep(
-              1, length(q_i0_il[, i])
-            ), q_i0_il[, (i + k):(nr.eq * i)]) %*% eta))
-          k = k + nr.eq - 1
-        }
-
-        ll <- 0
-        for (j in 1:ncol(n)) {
-          for (i in 1:length(n[, j])) {
-            ll <-
-              ll + n[i, j] * log(stats::pnorm(append(qn[i, ], 1, after = 0) %*% eta) / sum(p))
-          }
-        }
-
-        ll
-      }
+  split_result <- lapply(
+    split(1:length(index_vector), rep(1:nr.eq, each = nr.eq)),
+    function(indices) index_vector[indices]
+  )
 
 
-    otim <- maxLik::maxLik(LogLikelihood_p, start = ini, method = nummethod)
+  # Obtain etas for each equation
+  results <- lapply(split_result, FUN = function(i) {
+    neq <- ni[, i]
+    qeq <- qi[, i]
 
+    # Define log-likelihood
+    LogLikelihood_p <- function(eta, n = neq, qn = qeq) {
+      ll <- 0
+
+      denom <- unlist(lapply(split_result, function(i) {
+        stats::pnorm(sum(cbind(rep(1, nrow(qi[, i])), qi[, i]) %*% eta))
+      }))
+
+      eta_mat <- log(stats::pnorm(cbind(rep(1, nrow(qn)), qn) %*% eta) / sum(denom))
+
+      ll <- sum(t(n) %*% eta_mat)
+
+      return(ll)
+    }
+
+    # Maximize log-likelihood
+    otim <- maxLik::maxLik(LogLikelihood_p, start = initial, method = nummethod)
 
     res <- summary(otim)
 
-    results[[i + k]] <- res$estimate
-    results[[(i + k + 1)]] <- res$loglik
-    names(results)[[i + k]] <- paste("Equation", i, sep = " ")
-    names(results)[[(i + k + 1)]] <- paste("LogLik", i, sep = " ")
+    return(res)
+  })
 
-    j = j + nr.eq - 1
-    k = k + 1
-  }
+  # Return results
+  names(results) <- paste("Equation", 1:nr.eq)
 
   return(results)
-
 }
