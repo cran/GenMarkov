@@ -40,7 +40,12 @@ multi.mtd <-
 
     # Log-likelihood (Berchtold (2001))
     LogLikelihood <- function(lambda, ni, qi) {
-      ll <- sum(t(ni) %*% log(qi %*% lambda))
+
+      qi_lambda <- qi %*% lambda
+
+      qi_lambda[qi_lambda < 0] <- 1
+
+      ll <- sum(t(ni) %*% log(qi_lambda))
 
       return(ll)
     }

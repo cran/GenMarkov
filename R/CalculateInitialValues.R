@@ -21,9 +21,17 @@ CalculateInitialValues <- function(f, split_result = split_result) {
     sr <- rowSums(cg)
     sc <- colSums(cg)
 
-    num <- sum(cg * log2(sc) + t(t(cg) * log2(sr)) - cg * log2(cg) - cg * log2(tc))
+    num_in <- cg * log2(sc) + t(t(cg) * log2(sr)) - cg * log2(cg) - cg * log2(tc)
 
-    den <- sum(sc * log2(sc) - sc * log2(tc))
+    num_in[is.nan(num_in)] <- 0
+
+    num <- sum(num_in)
+
+    den_in <- sc * log2(sc) - sc * log2(tc)
+
+    den_in[is.nan(den_in)] <- 0
+
+    den <- sum(den_in)
 
     u <- num / den
     u[is.infinite(u)] <- 0

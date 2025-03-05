@@ -72,18 +72,57 @@ ProbValuesXDependent <- function(s, x) {
       s_l <- Hmisc::Lag(data[, 3])
 
       # Estimate multinomial logistic regression
-      res <- nnet::multinom(y[s_l == 1] ~ data[, "x"][s_l == 1], trace = FALSE)
+      res <- suppressWarnings(nnet::multinom(y[s_l == 1] ~ data[, "x"][s_l == 1], trace = FALSE))
 
-      # Extract fitted values
-      px1 <- matrix(
-        stats::fitted(res),
-        ncol = ncol(stats::fitted(res)),
-        nrow = nrow(stats::fitted(res))
+      warn <- tryCatch(
+        {
+          nnet::multinom(y[s_l == 1] ~ data[, "x"][s_l == 1], trace = FALSE)
+
+          if (length(warnings()) == 0) {
+            NULL  # Return NULL if no warning occurs
+          }
+
+        },
+        warning = function(w) {
+          # Extracting the warning message without printing
+          warning_message <- conditionMessage(w)
+          return(warning_message)
+        }
       )
+
+
+      if(is.null(warn)){
+        # Extract fitted values
+        px1 <- res$fitted.values
+
+      }else if(length(warn) == 1){
+
+        if( (grepl("\\bgroup\\b.*\\bempty\\b", warn, ignore.case = TRUE) || grepl("\\bgroups\\b.*\\bempty\\b", warn, ignore.case = TRUE)) ){
+        extracted_number <- as.numeric(regmatches(warn, gregexpr("\\d+", warn))[[1]])
+
+        # Extract fitted values
+        px1 <- res$fitted.values
+
+        ##Add missing groups
+        px1 <- cbind(px1, matrix(rep(0, nrow(px1)*length(extracted_number)),
+                                 ncol=length(extracted_number),
+                                 nrow = nrow(px1),
+                                 dimnames = list(NULL, extracted_number)))
+
+        #Re-order columns
+        px1 <- px1[, match(1:m1, colnames(px1))]
+        }else{
+          warning(warn)
+        }
+
+      }else{
+        warning(warn)
+      }
+
       # Create matrix to store fitted values
       px <- matrix(rep(0, m1 * length(s_l[-1])),
-        nrow = length(s_l[-1]),
-        ncol = m1
+                   nrow = length(s_l[-1]),
+                   ncol = m1
       )
       # Input fitted values where St-1 = s
       px[s_l[-1] == 1, ] <- px1

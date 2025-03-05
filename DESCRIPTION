@@ -1,7 +1,7 @@
 Package: GenMarkov
 Type: Package
 Title: Multivariate Markov Chains
-Version: 0.2.0
+Version: 0.2.1
 Authors@R: c(
             person('Carolina', 'Vasconcelos',
             email='cvasconcelos@novaims.unl.pt',
@@ -20,8 +20,8 @@ NeedsCompilation: no
 RoxygenNote: 7.2.3
 Depends: R (>= 3.5.0)
 LazyData: true
-Packaged: 2023-12-19 11:56:38 UTC; cvasconcelos
+Packaged: 2025-03-05 16:34:08 UTC; carolinavasconcelos
 Author: Carolina Vasconcelos [aut, cre],
   Bruno Damasio [aut]
 Repository: CRAN
-Date/Publication: 2023-12-19 12:20:02 UTC
+Date/Publication: 2025-03-05 16:50:02 UTC
